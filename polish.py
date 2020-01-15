@@ -5,6 +5,8 @@ import re
 import win32clipboard
 import clipboard
 
+from tag import extract_tags
+import pangu
 class Polish:
   def __init__(self, text):
     self.text = text
@@ -38,8 +40,10 @@ class Polish:
   def _replace(self, pat, repl):
     self.text = re.sub(pat, repl, self.text)
 
+  def extract_tags(self, n=10):
+    return extract_tags(self.text, topK=n)
 
 
-
-
-
+  def pangu_spacing(self):
+    self.text = pangu.spacing_text(self.text)
+    return self
