@@ -10,27 +10,22 @@ from datetime import datetime
 import dictdiffer
 import pytest
 import time
-from difflib import ndiff
+import difflib
 
 
 
-def re_split(text, sep=r"([.。!！?？\n+])"):
+def sep_split(text, sep=r"([.。!！?？\n+])"):
   result = re.split(sep, text)
-  # print('re_split', result)
-  result.append("")
-  result = ["".join(i) for i in zip(result[0::2], result[1::2])]
-  return result
+  values = result[::2]
+  delimiters = result[1::2] + ['']
+  return [v+d for v, d in zip(values, delimiters)]
 
 def show_diff(old_code, new_code):
-  diff = ndiff(re_split(old_code), re_split(new_code))
-  # diff = ndiff(old_code.splitlines(1), new_code.splitlines(1)) # splitlines(1) 保留行尾的换行
+  diff = difflib.ndiff(sep_split(old_code), sep_split(new_code))
+  # diff = difflib.ndiff(old_code.splitlines(1), new_code.splitlines(1)) # splitlines(1) 保留行尾的换行
   print('\n'.join(line for line in diff if not line.startswith(' ')))
 
-# from difflib import unified_diff
-# def compare_text(t1, t2, prefix=''):
-#   changes = [l for l in unified_diff(t1.split('\n'), t2.split('\n'))]
-#   for change in changes:
-#     print(prefix + change)
+
 
 from polish import Polish
 
@@ -127,8 +122,8 @@ Chrome
 
 
 def test_5_pangu_spacing():
-  sample = '當你凝視著bug，bug也凝視著你'
-  result = '當你凝視著 bug，bug 也凝視著你'
+  sample = '當你,凝視著bug，bug也凝視著你'
+  result = '當你，凝視著 bug，bug 也凝視著你'
   Polish(sample).pangu_spacing().text | should.eq(result)
 
   sample = '''
@@ -149,6 +144,8 @@ def test_6_pangu_spacing_level2():
   result = '''那么 `SelectLeftSpaceChar()` 这个函数的作用，就是用来选中这个多余的空格。在选中这个多余的空格之后'''
   Polish(sample).pangu_spacing().text.strip() | should.eq(result.strip())
 
+  sample = '當你,凝視著bug,bug也凝視著你'
+  result = '當你，凝視著 bug, bug 也凝視著你'
 
 
 
