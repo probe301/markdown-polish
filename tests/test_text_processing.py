@@ -152,6 +152,255 @@ def test_6_pangu_spacing_level2():
 
 
 # sample
+def test_7_transword():
+  sample = '''登陆网站异常, 请稍后, 您可以定义对象所期望的操作和属性, 而不是显示声明其类型'''
+  result = '''登录网站异常, 请稍候, 您可以定义对象所期望的操作和属性, 而不是显式声明其类型'''
+  Polish(sample).transword().text | should.eq(result)
+
+  sample = '''那么`SelectLeftSpaceChar（）`这个“函数”的作用'''
+  result = '''那么`SelectLeftSpaceChar()`这个"函数"的作用'''
+  Polish(sample).transword().text | should.eq(result)
+
+
+
+def test_8_extract_outline():
+  # 提取标题
+  sample = '''
+# title1
+
+## title2
+text
+text
+
+## title3
+
+text
+
+#### sub1
+
+text
+
+
+## title4
+
+#### sub2
+
+### sub3
+
+#### sub4
+
+text
+
+> quote paragraph
+> 
+> # quote title1
+> 
+
+```python
+code
+# comments
+## comments
+code
+```
+
+\## not title5
+
+    ## title6
+
+## title7
+
+'''
+
+  result = '''# title1
+## title2
+## title3
+## title4
+### sub3
+## title7'''.splitlines()
+  # Polish(sample).extract_outline(headers='h1,h2,h3', paragraph='full,preview,none') | should.eq(result)
+  Polish(sample).extract_outline(headers='h1,h2,h3') | should.eq(result)
+
+
+def test_9a_extract_notes_highlight():
+  sample = '''
+提取高亮, 注记
+提取高亮 即 ==xxx== 之间的内容
+
+==高亮== 有可能==在同一行中==出现两次
+
+注记 提取两种 block note
+
+!!! note
+
+    xxxx
+    xxxx
+
+::: tip
+这是一个提示
+:::
+
+提取<span color='red'>自定义的</span>颜色
+
+
+    可能出现在缩进块里, 可能有<font style='background:#def; font-size:1.5rem; color: #edb;'>不同的颜色定义</font>型式
+
+'''
+  # highlight
+  result_should = [
+    ('highlight', '==xxx=='),
+    ('highlight', '==高亮=='),
+    ('highlight', '==在同一行中=='),
+    ('highlight', "<span color='red'>自定义的</span>"),
+    ('highlight', "<font style='background:#def; font-size:1.5rem; color: #edb;'>不同的颜色定义</font>"),
+  ]
+  Polish(sample).extract_notes(highlight=True, annotation=False) | should.eq(result_should)
+
+
+def test_9b_extract_notes_annotations():
+  sample = '''
+提取高亮, 注记
+提取高亮 即 ==xxx== 之间的内容
+
+==高亮== 有可能==在同一行中==出现两次
+
+注记 提取两种 block note
+
+!!! note
+
+    xxxx
+    xxxx
+
+::: tip
+这是一个提示
+:::
+
+提取自定义的颜色
+'''
+  # annotation
+  result_should = [
+    ('highlight', '==xxx=='),
+    ('annotation', '!!! note\n\n    xxxx\n    xxxx\n\n'),
+    ('annotation', '::: tip\n这是一个提示\n:::\n\n'),
+    ]
+  Polish(sample).extract_notes(highlight=False, annotation=True) | should.eq(result_should)
+
+
+
+
+def test_10_extract_md_blocks():
+  sample = '''
+# title1
+
+## title2
+text
+text
+
+## title3
+
+text
+
+#### sub1
+
+text
+
+
+## title4
+
+#### sub2
+
+### sub3
+
+#### sub4
+
+text
+
+> quote paragraph
+> 
+> # quote title1
+> 
+
+```python
+code
+# comments
+## comments
+code
+```
+
+\## not title5
+
+    ## title6
+    
+    indent2
+
+## title7
+
+'''
+  result_should = [
+  ('title', '# title1\n\n'),
+  ('title', '## title2\n'),
+  ('paragraph', 'text\n'),
+  ('paragraph', 'text\n\n'),
+  ('title', '## title3\n\n'),
+  ('paragraph', 'text\n\n'),
+  ('title', '#### sub1\n\n'),
+  ('paragraph', 'text\n\n\n'),
+  ('title', '## title4\n\n'),
+  ('title', '#### sub2\n\n'),
+  ('title', '### sub3\n\n'),
+  ('title', '#### sub4\n\n'),
+  ('paragraph', 'text\n\n'),
+  ('quote', '> quote paragraph\n> \n> # quote title1\n> \n\n'),
+  ('code', '```python\ncode\n# comments\n## comments\ncode\n```\n\n'),
+  ('paragraph', '\\## not title5\n\n'),
+  ('indent', '    ## title6\n    \n    indent2\n\n'),
+  ('title', '## title7'),]
+  result = list(Polish(sample)._split_markdown_lines(sample.strip()))
+
+  len(result) | should.eq(len(result_should))
+  for line_actual, line_should in zip(result, result_should):
+    line_actual | should.eq(line_should)
+
+
+
+
+
+
+# sample
+def test_playground():
+  sample = '''
+1
+
+2
+
+3
+4
+
+
+5
+'''
+  s = ['1\n\n', '2\n\n', '3\n', '4\n\n\n', '5']
+  import re
+  result = re.split(r"([\n]+)", sample.strip())
+  print(result)
+  values = result[::2]
+  delimiters = result[1::2] + ['']
+  result = [v+d for v, d in zip(values, delimiters)] 
+  result | should.eq(s) 
+
+  text = r'abc 123 bsdf 223 jn 1123'
+  result = re.findall(r'((\d)\2)', text)
+  print(result)
+
+  text = '''提取<span color='red'>自定义的</span>颜色
+    可能出现在缩进块里, 可能有<font style='background:#def; font-size:1.5rem; color: #edb;'>不同的颜色定义</font>型式
+# '''
+  pat2 = r'(<(span|font)[^>]+?color ?(=|:) ?([\'\"]?).+?\4;?[^>]+?>.+?</ ?\2>)'
+
+  result = re.findall(pat2, text)
+  print(result)
+
+
+# sample
 def test_X_sample():
   sample = '''
 xxxxxx
