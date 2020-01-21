@@ -138,6 +138,7 @@ def test_5_pangu_spacing():
 
 
 
+@pytest.mark.skip(reason="wait")
 def test_6_pangu_spacing_level2():
   # 需要能保留 `` 内部结构
   sample = '''那么`SelectLeftSpaceChar()`这个函数的作用,就是用来选中这个多余的空格. 在选中这个多余的空格之后'''
@@ -223,26 +224,20 @@ code
 
 def test_9a_extract_notes_highlight():
   sample = '''
-提取高亮, 注记
 提取高亮 即 ==xxx== 之间的内容
 
 ==高亮== 有可能==在同一行中==出现两次
 
-注记 提取两种 block note
-
-!!! note
-
-    xxxx
-    xxxx
-
-::: tip
-这是一个提示
-:::
-
 提取<span color='red'>自定义的</span>颜色
 
+## 可能出现在<span color=#7ed>标题</ span>里
 
-    可能出现在缩进块里, 可能有<font style='background:#def; font-size:1.5rem; color: #edb;'>不同的颜色定义</font>型式
+    可能出现在缩进块里, 可能有<font style='background:#def; font-size:1.5rem; color: #edb;'>不同的颜色定义</font>标签
+
+不提取<span color='red'>带有换行
+
+换行之后</span>的内容
+
 
 '''
   # highlight
@@ -251,17 +246,49 @@ def test_9a_extract_notes_highlight():
     ('highlight', '==高亮=='),
     ('highlight', '==在同一行中=='),
     ('highlight', "<span color='red'>自定义的</span>"),
+    ('highlight', "<span color=#7ed>标题</ span>"),
     ('highlight', "<font style='background:#def; font-size:1.5rem; color: #edb;'>不同的颜色定义</font>"),
   ]
-  Polish(sample).extract_notes(highlight=True, annotation=False) | should.eq(result_should)
+  Polish(sample).extract_highlights() | should.eq(result_should)
+
+
 
 
 def test_9b_extract_notes_annotations():
   sample = '''
-提取高亮, 注记
-提取高亮 即 ==xxx== 之间的内容
+提取注记
 
-==高亮== 有可能==在同一行中==出现两次
+注记 提取block note
+
+!!! note
+
+    xxxx
+    xxxx
+
+sep
+
+!!! danger
+    xxxx
+      
+    xxxx
+
+    xxxx
+
+text
+
+
+'''
+  result_should = [
+    ('annotation', '!!! note\n\n    xxxx\n    xxxx\n\n'),
+    ('annotation', '!!! danger\n    xxxx\n      \n    xxxx\n\n    xxxx\n\n'),
+    ]
+  Polish(sample).extract_annotations() | should.eq(result_should)
+
+
+@pytest.mark.skip(reason="wait")
+def test_9c_extract_notes_annotations_level2():
+  sample = '''
+提取高亮, 注记, 以及自定义容器
 
 注记 提取两种 block note
 
@@ -271,23 +298,36 @@ def test_9b_extract_notes_annotations():
     xxxx
 
 ::: tip
-这是一个提示
+
+也应该包括这种提示
+
 :::
 
-提取自定义的颜色
+::::: container
+:::: row
+::: col-xs-6 alert alert-success
+success text
+:::
+::: col-xs-6 alert alert-info
+warning text
+:::
+::::
+:::::
+
 '''
   # annotation
   result_should = [
-    ('highlight', '==xxx=='),
     ('annotation', '!!! note\n\n    xxxx\n    xxxx\n\n'),
-    ('annotation', '::: tip\n这是一个提示\n:::\n\n'),
+    ('annotation', '::: tip\n\n这是一个提示\n\n:::\n\n'),
     ]
   Polish(sample).extract_notes(highlight=False, annotation=True) | should.eq(result_should)
 
 
 
 
-def test_10_extract_md_blocks():
+
+
+def test_10_split_md_blocks():
   sample = '''
 # title1
 
@@ -317,7 +357,8 @@ text
 > quote paragraph
 > 
 > # quote title1
-> 
+      
+> text
 
 ```python
 code
@@ -325,6 +366,8 @@ code
 ## comments
 code
 ```
+
+----------sep----
 
 \## not title5
 
@@ -334,27 +377,46 @@ code
 
 ## title7
 
+text
+
+!!! note
+
+    xxxx
+    xxxx
+
+text
+
 '''
+  from polish import BlockType
   result_should = [
-  ('title', '# title1\n\n'),
-  ('title', '## title2\n'),
-  ('paragraph', 'text\n'),
-  ('paragraph', 'text\n\n'),
-  ('title', '## title3\n\n'),
-  ('paragraph', 'text\n\n'),
-  ('title', '#### sub1\n\n'),
-  ('paragraph', 'text\n\n\n'),
-  ('title', '## title4\n\n'),
-  ('title', '#### sub2\n\n'),
-  ('title', '### sub3\n\n'),
-  ('title', '#### sub4\n\n'),
-  ('paragraph', 'text\n\n'),
-  ('quote', '> quote paragraph\n> \n> # quote title1\n> \n\n'),
-  ('code', '```python\ncode\n# comments\n## comments\ncode\n```\n\n'),
-  ('paragraph', '\\## not title5\n\n'),
-  ('indent', '    ## title6\n    \n    indent2\n\n'),
-  ('title', '## title7'),]
-  result = list(Polish(sample)._split_markdown_lines(sample.strip()))
+  (BlockType.title, '# title1\n\n'),
+  (BlockType.title, '## title2\n'),
+  (BlockType.p, 'text\n'),
+  (BlockType.p, 'text\n\n'),
+  (BlockType.title, '## title3\n\n'),
+  (BlockType.p, 'text\n\n'),
+  (BlockType.title, '#### sub1\n\n'),
+  (BlockType.p, 'text\n\n\n'),
+  (BlockType.title, '## title4\n\n'),
+  (BlockType.title, '#### sub2\n\n'),
+  (BlockType.title, '### sub3\n\n'),
+  (BlockType.title, '#### sub4\n\n'),
+  (BlockType.p, 'text\n\n'),
+  (BlockType.quote, '> quote paragraph\n> \n> # quote title1\n      \n> text\n\n'),
+  (BlockType.fencecode, '```python\ncode\n# comments\n## comments\ncode\n```\n\n'),
+  (BlockType.sepline, '----------sep----\n\n'),
+  (BlockType.p, '\\## not title5\n\n'),
+  (BlockType.indent, '    ## title6\n    \n    indent2\n\n'),
+  (BlockType.title, '## title7\n\n'),
+  (BlockType.p, 'text\n\n'),
+  (BlockType.admonition, '!!! note\n\n    xxxx\n    xxxx\n\n'),
+  (BlockType.p, 'text'),
+  
+  ]
+  result = list(Polish(sample)._split_markdown_blocks(sample.strip()))
+
+  from pprint import pprint as pp
+  pp(result)
 
   len(result) | should.eq(len(result_should))
   for line_actual, line_should in zip(result, result_should):
@@ -367,25 +429,29 @@ code
 
 # sample
 def test_playground():
+  import re
   sample = '''
 1
 
 2
 
-3
-4
+> quote paragraph
+> 
+> # quote title1
+      
+> text
 
 
 5
 '''
-  s = ['1\n\n', '2\n\n', '3\n', '4\n\n\n', '5']
-  import re
+
+
   result = re.split(r"([\n]+)", sample.strip())
   print(result)
   values = result[::2]
   delimiters = result[1::2] + ['']
   result = [v+d for v, d in zip(values, delimiters)] 
-  result | should.eq(s) 
+  print(result)
 
   text = r'abc 123 bsdf 223 jn 1123'
   result = re.findall(r'((\d)\2)', text)
@@ -408,5 +474,5 @@ xxxxxx
   result = '''
 xxxxxx
 '''
-  Polish(sample).xxxxx().text | should.eq(result)
+  Polish(sample).text | should.eq(result)
 

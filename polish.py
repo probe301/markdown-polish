@@ -7,6 +7,22 @@ import clipboard
 
 from tag import extract_tags
 import pangu
+
+import enum  
+
+BlockType = enum.Enum('BlockType', ('p', 
+                                    'title',   
+                                    'fencecode',    
+                                    'sepline',  
+                                    'indent', 
+                                    'admonition', 
+                                    'table', 
+                                    'list', 
+                                    'quote', 
+                                    'frontmatter'
+                     ))
+
+
 class Polish:
   def __init__(self, text):
     self.text = text
@@ -40,48 +56,84 @@ class Polish:
   def _replace(self, pat, repl):
     self.text = re.sub(pat, repl, self.text)
 
-  def _split_markdown_lines(self, text):
-    in_code_block = False
-    code_block = ''
-    quote_block = ''
-    indent_block = ''
-    for line in self._sep_split(text, sep=r"([\n]+)"):
-      if line.startswith('```'):
-        in_code_block = not(in_code_block)
-        code_block += line
-        if in_code_block:
-          if quote_block: 
-            yield 'quote', quote_block
-            quote_block = ''
-          if indent_block: 
-            yield 'indent', indent_block
-            indent_block = ''
-        else:
-          yield 'code', code_block
-          code_block = ''
-      elif in_code_block:
-        code_block += line
-      elif line.startswith('>'):
-        quote_block += line
+
+
+  def _tag_markdown_blocks(self, lines):
+    '''
+    单行 tag: title p sepline...
+    多行 tag: quote indent admonition fencecode frontmatter...
+    fencecode frontmatter 通过结束符关闭
+    quote indent admonition 自行关闭
+    '''
+    last_blocktype = None
+    for line, farseer in zip(lines, lines[1:] + ['']): # farseer 前瞻一行
+      
+      if last_blocktype is BlockType.fencecode:
+        yield BlockType.fencecode
+        if line.startswith('```'):
+          last_blocktype = None
+      elif last_blocktype is BlockType.frontmatter:
+        yield BlockType.frontmatter
+        if line.strip() == '---':
+          last_blocktype = None
+      elif last_blocktype is BlockType.admonition and line.startswith('    '):
+        yield BlockType.admonition
+      elif line.strip() == '' and last_blocktype in (BlockType.admonition, BlockType.indent, BlockType.quote):
+        yield last_blocktype
+
+      elif line.startswith('```'):
+        last_blocktype = BlockType.fencecode
+        yield BlockType.fencecode
       elif line.startswith('    '):
-        indent_block += line
+        last_blocktype = BlockType.indent
+        yield BlockType.indent
+      elif line.strip() == '---':
+        last_blocktype = BlockType.frontmatter
+        yield BlockType.frontmatter
+      elif line.startswith('!!! '):
+        last_blocktype = BlockType.admonition
+        yield BlockType.admonition
+      elif line.startswith('>'):
+        last_blocktype = BlockType.quote
+        yield BlockType.quote
 
-      else: 
-        if quote_block: 
-          yield 'quote', quote_block
-          quote_block = ''
-        if indent_block: 
-          yield 'indent', indent_block
-          indent_block = ''
-
-        # switch single line
+      else:
         if line.startswith('#'):
-          yield 'title', line
-        elif line.startswith('----'):
-          yield 'sep', line
+          yield BlockType.title
+        elif line.startswith((r'----', r'\----', r'====', r'\====', r'\=\=\=\=')):
+          yield BlockType.sepline
         else:
-          yield 'paragraph', line
-          
+          yield BlockType.p
+
+  # end def _tag_markdown_blocks
+
+
+  def _split_markdown_blocks(self, text):
+    '''
+    单行 tag: title p sepline...
+    多行 tag: quote indent admonition fencecode frontmatter...
+
+    聚合相同的多行 tag
+    '''
+    lines = self._sep_split(text.strip(), sep=r"([\n]+)")
+    tags = list(self._tag_markdown_blocks(lines))
+
+    block_cache = ''
+
+    for tag, next_tag, line in zip(tags, tags[1:] + [None], lines):
+      # print(tag, line)
+      if tag in (BlockType.title, BlockType.p, BlockType.sepline):
+        yield tag, line
+        block_cache = ''
+      elif tag == next_tag:
+        block_cache += line
+      else:
+        block_cache += line
+        yield tag, block_cache
+        block_cache = ''
+
+  # end def _split_markdown_blocks
+
 
 
 
@@ -117,26 +169,26 @@ class Polish:
 
   def extract_outline(self, headers='h1,h2,h3'):
 
-    lines = self._split_markdown_lines(self.text)
+    lines = self._split_markdown_blocks(self.text)
     result = []
     header_pat = tuple('#'*int(h[1])+' ' for h in headers.split(','))
 
     for kind, line in lines:
-      if kind == 'title' and line.startswith(header_pat):
+      if kind == BlockType.title and line.startswith(header_pat):
         result.append(line.strip())
     return result
 
 
 
 
-  def extract_notes(self, highlight=True, annotation=True):
+  def extract_highlights(self):
+    '''针对行内高亮, 非块级元素'''
     result = []
     highlight_pat1 = r'(==(.+?)==)'
     highlight_pat2 = r'(<(span|font)[^>]+?color ?(=|:) ?([\'\"]?).+?\4;?[^>]+?>.+?</ ?\2>)'
 
-    lines = self._split_markdown_lines(self.text)
-    for kind, line in lines:
-      if kind in ('title', 'code', 'sep'):
+    for kind, line in self._split_markdown_blocks(self.text):
+      if kind in (BlockType.fencecode, BlockType.sepline):
         continue
       else:
         for m in re.findall(highlight_pat1, line):
@@ -148,3 +200,12 @@ class Polish:
     return result
 
 
+  def extract_annotations(self):
+    '''针对块级注释'''
+    result = []
+
+    for kind, block in self._split_markdown_blocks(self.text):
+      # print(kind, block)
+      if kind in (BlockType.admonition, ):
+        result.append(('annotation', block))
+    return result
